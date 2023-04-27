@@ -61,6 +61,10 @@ namespace Frosty.ModSupport
                                 ManifestFileInfo fi = manifestBundle.files[i];
 
                                 string catFile = fs.ResolvePath(((fi.file.IsInPatch) ? "native_patch/" : "native_data/") + fs.GetCatalog(fi.file) + "/cas.cat");
+                                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                                {
+                                    catFile = fs.ResolvePath(("native_data/") + fs.GetCatalog(fi.file) + "/cas.cat");
+                                }
                                 int catFileHash = Fnv1.HashString(catFile.ToLower());
 
                                 Dictionary<uint, CatResourceEntry> casList = parent.resources[catFileHash][fi.file.CasIndex];
@@ -314,8 +318,7 @@ namespace Frosty.ModSupport
 
                             long startPos = writer.Position;
 
-                            writer.Write(0x9D798ED5, Endian.Big);
-                            if (ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield5) //bfv changed the bundle magic for some reason
+                            if (ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield5)
                                 writer.Write(0x9D798ED5, Endian.Big);
                             else
                                 writer.Write(0x8C6E84DD, Endian.Big);
