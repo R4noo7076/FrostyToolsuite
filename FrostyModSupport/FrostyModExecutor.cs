@@ -158,8 +158,8 @@ namespace Frosty.ModSupport
             {
                 ModInfo modInfo = obj as ModInfo;
 
-                if (Name == modInfo.Name 
-                    && Version == modInfo.Version 
+                if (Name == modInfo.Name
+                    && Version == modInfo.Version
                     && Category == modInfo.Category
                     && FileName == modInfo.FileName)
                     return true;
@@ -320,6 +320,11 @@ namespace Frosty.ModSupport
                                 if (existingEntry.Sha1 == resource.Sha1)
                                     return;
 
+                                if (!archiveData.ContainsKey(existingEntry.Sha1))
+                                {
+                                    return;
+                                }
+
                                 archiveData[existingEntry.Sha1].RefCount--;
                                 if (archiveData[existingEntry.Sha1].RefCount == 0)
                                     archiveData.TryRemove(existingEntry.Sha1, out _);
@@ -341,8 +346,7 @@ namespace Frosty.ModSupport
                                 entry.Sha1 = ebxEntry.Sha1;
                                 entry.OriginalSize = ebxEntry.OriginalSize;
                             }
-
-                            if (ebxEntry != null)
+                            else if (ebxEntry != null)
                             {
                                 // add in existing bundles
                                 foreach (int bid in ebxEntry.Bundles)
@@ -413,6 +417,11 @@ namespace Frosty.ModSupport
                                 if (existingEntry.Sha1 == resource.Sha1)
                                     return;
 
+                                if (!archiveData.ContainsKey(existingEntry.Sha1))
+                                {
+                                    return;
+                                }
+
                                 archiveData[existingEntry.Sha1].RefCount--;
                                 if (archiveData[existingEntry.Sha1].RefCount == 0)
                                     archiveData.TryRemove(existingEntry.Sha1, out _);
@@ -437,8 +446,7 @@ namespace Frosty.ModSupport
                                 entry.ResRid = resEntry.ResRid;
                                 entry.ResType = resEntry.ResType;
                             }
-
-                            if (resEntry != null)
+                            else if (resEntry != null)
                             {
                                 // add in existing bundles
                                 foreach (int bid in resEntry.Bundles)
@@ -516,6 +524,11 @@ namespace Frosty.ModSupport
                                 if (existingEntry.Sha1 == resource.Sha1)
                                     return;
 
+                                if (!archiveData.ContainsKey(existingEntry.Sha1))
+                                {
+                                    return;
+                                }
+
                                 archiveData[existingEntry.Sha1].RefCount--;
                                 if (archiveData[existingEntry.Sha1].RefCount == 0)
                                     archiveData.TryRemove(existingEntry.Sha1, out _);
@@ -541,6 +554,49 @@ namespace Frosty.ModSupport
                                 entry.RangeStart = chunkEntry.RangeStart;
                                 entry.RangeEnd = chunkEntry.RangeEnd;
 
+                                if (chunkEntry.LogicalOffset != 0 && chunkEntry.RangeStart == 0)
+                                {
+                                    // need to calculate range start, since manifest bundle layouts don't store it directly
+                                    // however it is used to store chunk portions in bundles
+                                    // @todo: Move to mod export
+
+                                    using (NativeReader reader = new NativeReader(new MemoryStream(data)))
+                                    {
+                                        long uncompressedSize = entry.LogicalOffset + entry.LogicalSize;
+                                        long uncompressedBundledSize = (entry.LogicalOffset & 0xFFFF) | entry.LogicalSize;
+                                        long logicalOffset = uncompressedSize - uncompressedBundledSize;
+                                        uint size = 0;
+
+                                        while (true)
+                                        {
+                                            int decompressedSize = reader.ReadInt(Endian.Big);
+                                            ushort compressionType = reader.ReadUShort();
+                                            int bufferSize = reader.ReadUShort(Endian.Big);
+
+                                            int flags = ((compressionType & 0xFF00) >> 8);
+
+                                            if ((flags & 0x0F) != 0)
+                                                bufferSize = ((flags & 0x0F) << 0x10) + bufferSize;
+                                            if ((decompressedSize & 0xFF000000) != 0)
+                                                decompressedSize &= 0x00FFFFFF;
+
+                                            logicalOffset -= decompressedSize;
+                                            if (logicalOffset < 0)
+                                                break;
+
+                                            compressionType = (ushort)(compressionType & 0x7F);
+                                            if (compressionType == 0x00)
+                                                bufferSize = decompressedSize;
+
+                                            size += (uint)(bufferSize + 8);
+                                            reader.Position += bufferSize;
+                                        }
+
+                                        entry.RangeStart = size;
+                                        entry.RangeEnd = (uint)data.Length;
+                                    }
+                                }
+
                                 if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
                                 {
                                     if (fs.GetManifestChunk(chunkEntry.Id) != null)
@@ -548,52 +604,10 @@ namespace Frosty.ModSupport
                                         entry.TocChunkSpecialHack = true;
                                         if (chunkEntry.Bundles.Count == 0)
                                             resource.ClearAddedBundles();
-
-                                        else if (entry.FirstMip != -1)
-                                        {
-                                            // need to calculate range start, since manifest bundle layouts don't store it directly
-                                            // however it is used to store chunk portions in bundles
-                                            // @todo: Move to mod export
-
-                                            using (NativeReader reader = new NativeReader(new MemoryStream(data)))
-                                            {
-                                                long logicalOffset = entry.LogicalOffset;
-                                                uint size = 0;
-
-                                                while (true)
-                                                {
-                                                    int decompressedSize = reader.ReadInt(Endian.Big);
-                                                    ushort compressionType = reader.ReadUShort();
-                                                    int bufferSize = reader.ReadUShort(Endian.Big);
-
-                                                    int flags = ((compressionType & 0xFF00) >> 8);
-
-                                                    if ((flags & 0x0F) != 0)
-                                                        bufferSize = ((flags & 0x0F) << 0x10) + bufferSize;
-                                                    if ((decompressedSize & 0xFF000000) != 0)
-                                                        decompressedSize &= 0x00FFFFFF;
-
-                                                    logicalOffset -= decompressedSize;
-                                                    if (logicalOffset < 0)
-                                                        break;
-
-                                                    compressionType = (ushort)(compressionType & 0x7F);
-                                                    if (compressionType == 0x00)
-                                                        bufferSize = decompressedSize;
-
-                                                    size += (uint)(bufferSize + 8);
-                                                    reader.Position += bufferSize;
-                                                }
-
-                                                entry.RangeStart = size;
-                                                entry.RangeEnd = (uint)data.Length;
-                                            }
-                                        }
                                     }
                                 }
                             }
-
-                            if (chunkEntry != null)
+                            else if (chunkEntry != null)
                             {
                                 // add in existing bundles
                                 bundles.Add(chunksBundleHash);
@@ -743,6 +757,11 @@ namespace Frosty.ModSupport
                         if (existingEntry.Sha1 == resource.GetValue<Sha1>("sha1"))
                             continue;
 
+                        if (!archiveData.ContainsKey(existingEntry.Sha1))
+                        {
+                            continue;
+                        }
+
                         archiveData[existingEntry.Sha1].RefCount--;
                         if (archiveData[existingEntry.Sha1].RefCount == 0)
                             archiveData.TryRemove(existingEntry.Sha1, out _);
@@ -794,6 +813,11 @@ namespace Frosty.ModSupport
                         ResAssetEntry existingEntry = modifiedRes[name];
                         if (existingEntry.Sha1 == resource.GetValue<Sha1>("sha1"))
                             continue;
+
+                        if (!archiveData.ContainsKey(existingEntry.Sha1))
+                        {
+                            continue;
+                        }
 
                         archiveData[existingEntry.Sha1].RefCount--;
                         if (archiveData[existingEntry.Sha1].RefCount == 0)
@@ -848,6 +872,11 @@ namespace Frosty.ModSupport
                         ChunkAssetEntry existingEntry = modifiedChunks[chunkId];
                         if (existingEntry.Sha1 == resource.GetValue<Sha1>("sha1"))
                             continue;
+
+                        if (!archiveData.ContainsKey(existingEntry.Sha1))
+                        {
+                            continue;
+                        }
 
                         archiveData[existingEntry.Sha1].RefCount--;
                         if (archiveData[existingEntry.Sha1].RefCount == 0)
@@ -975,7 +1004,7 @@ namespace Frosty.ModSupport
             string patchPath = "Patch";
             if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.PlantsVsZombiesGardenWarfare2 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
                 patchPath = "Update\\Patch\\Data";
-            else if (ProfilesLibrary.DataVersion == (int)ProfileVersion.PlantsVsZombiesBattleforNeighborville || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5) //bfn and bfv dont have a patch directory
+            else if (ProfilesLibrary.DataVersion == (int)ProfileVersion.PlantsVsZombiesBattleforNeighborville || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
                 patchPath = "Data";
 
             if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden20)
@@ -1139,7 +1168,7 @@ namespace Frosty.ModSupport
                                 Directory.CreateDirectory(modDataPath + "Data");
                             cmdArgs.Add(new SymLinkStruct(modDataPath + "Data/Win32", fs.BasePath + "Data/Win32", true));
                         }
-                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5) //bfv doesnt have a patch directory so we need to rebuild the data folder structure instead
+                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
                         {
                             if (!Directory.Exists(modDataPath + "Data"))
                                 Directory.CreateDirectory(modDataPath + "Data");
@@ -1209,7 +1238,7 @@ namespace Frosty.ModSupport
                 foreach (string catalog in fs.Catalogs)
                 {
                     string path = fs.ResolvePath("native_patch/" + catalog + "/cas.cat");
-                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5) //again, no patch directory. fun.
+                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
                     {
                         path = fs.ResolvePath("native_data/" + catalog + "/cas.cat");
                     }
@@ -1245,8 +1274,13 @@ namespace Frosty.ModSupport
                     FrostyMessageBox.Show(reason + "\r\n\r\nShortly you will be prompted for elevated privileges, this is required to create symbolic links between the original data and the new modified data. Please ensure that you accept this to avoid any issues.", "Frosty Toolsuite");
                     if (!RunSymbolicLinkProcess(cmdArgs))
                     {
-                        Directory.Delete(modDataPath, true);
-                        throw new FrostySymLinkException();
+                        FrostyMessageBox.Show("Frosty needs to generate symbolic links, please ensure that you accept this so you don't have to regenerate ModData.", "Frosty Editor");
+                        if (!RunSymbolicLinkProcess(cmdArgs))
+                        {
+                            Directory.Delete(modDataPath, true);
+                            FrostyMessageBox.Show("One ore more symbolic links could not be created, please restart tool as Administrator and ensure your storage drive is formatted to NTFS (not exFAT).", "Frosty Editor");
+                            return -1;
+                        }
                     }
                 }
 
@@ -1673,544 +1707,560 @@ namespace Frosty.ModSupport
                         archiveData.TryAdd(sha1, new ArchiveInfo() { Data = tmpBuf });
                         WriteArchiveData(modDataPath + patchPath + "/" + catalog, new CasDataEntry("", sha1));
 
-                        manifest.SetValue("size", tmpBuf.Length);
-                        manifest.SetValue("offset", 0);
-                        manifest.SetValue("sha1", sha1);
-                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5) //more patch directory shenanigans
+                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                        {
+                            manifest.SetValue("size", tmpBuf.Length);
+                            manifest.SetValue("offset", 0);
+                            manifest.SetValue("sha1", sha1);
                             manifest.SetValue("file", (int)new ManifestFileRef(fileRef.CatalogIndex, false, casIndex));
+                        }
                         else
+                        {
+                            manifest.SetValue("size", tmpBuf.Length);
+                            manifest.SetValue("offset", 0);
+                            manifest.SetValue("sha1", sha1);
                             manifest.SetValue("file", (int)new ManifestFileRef(fileRef.CatalogIndex, true, casIndex));
-                    }
-
-                    // add any new superbundles
-                    if (addedSuperBundles.Count > 0)
-                    {
-                        foreach (string superBundle in addedSuperBundles)
-                        {
-                            DbObject sbobj = new DbObject();
-                            sbobj.SetValue("name", superBundle);
-                            layout.GetValue<DbObject>("superBundles").Add(sbobj);
-
-                            DbObject chunk = (DbObject)layout.GetValue<DbObject>("installManifest").GetValue<DbObject>("installChunks")[1];
-                            chunk.GetValue<DbObject>("superbundles").Add(superBundle);
                         }
+
+                        // add any new superbundles
+                        if (addedSuperBundles.Count > 0)
+                        {
+                            foreach (string superBundle in addedSuperBundles)
+                            {
+                                DbObject sbobj = new DbObject();
+                                sbobj.SetValue("name", superBundle);
+                                layout.GetValue<DbObject>("superBundles").Add(sbobj);
+
+                                DbObject chunk = (DbObject)layout.GetValue<DbObject>("installManifest").GetValue<DbObject>("installChunks")[1];
+                                chunk.GetValue<DbObject>("superbundles").Add(superBundle);
+                            }
+                        }
+
+                        string layoutLocation = modDataPath + patchPath + "/layout.toc";
+                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                            layoutLocation = modDataPath + "Data/layout.toc";
+
+                        using (DbWriter writer = new DbWriter(new FileStream(layoutLocation, FileMode.Create), true))
+                            writer.Write(layout);
                     }
 
-                    string layoutLocation = modDataPath + patchPath + "/layout.toc";
+                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.PlantsVsZombiesGardenWarfare2 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
+                    {
+                        // copy additional files
+                        CopyFileIfRequired(fs.BasePath + patchPath + "/../package.mft", modDataPath + patchPath + "/../package.mft");
+                    }
+
                     if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
-                        layoutLocation = modDataPath + "Data/layout.toc";
-
-                    using (DbWriter writer = new DbWriter(new FileStream(layoutLocation, FileMode.Create), true))
-                        writer.Write(layout);
-                }
-
-                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.PlantsVsZombiesGardenWarfare2 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
-                {
-                    // copy additional files
-                    CopyFileIfRequired(fs.BasePath + patchPath + "/../package.mft", modDataPath + patchPath + "/../package.mft");
-                }
-
-                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
-                {
-                    // copy from old data to new data
-                    CopyFileIfRequired(fs.BasePath + "Data/chunkmanifest", modDataPath + "Data/chunkmanifest");
-                    CopyFileIfRequired(fs.BasePath + "Data/initfs_Win32", modDataPath + "Data/initfs_Win32");
-                }
-
-                // create the frosty mod list file
-                File.WriteAllText(Path.Combine(modDataPath, patchPath, "mods.json"), JsonConvert.SerializeObject(GenerateModInfoList(modPaths, rootPath), Formatting.Indented));
-            }
-
-            cancelToken.ThrowIfCancellationRequested();
-
-            // DAI and NFS dont require bcrypt
-            if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
-            {
-                // delete old useless bcrypt
-                if (File.Exists(fs.BasePath + "bcrypt.dll"))
-                    File.Delete(fs.BasePath + "bcrypt.dll");
-
-                // copy over new CryptBase
-                CopyFileIfRequired("ThirdParty/CryptBase.dll", fs.BasePath + "CryptBase.dll");
-            }
-            CopyFileIfRequired(fs.BasePath + "user.cfg", modDataPath + "user.cfg");
-
-            // FIFA games require a fifaconfig workaround
-            if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa19 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa20)
-            {
-                FileInfo fi = new FileInfo(fs.BasePath + "FIFASetup\\fifaconfig_orig.exe");
-                if (!fi.Exists)
-                {
-                    fi = new FileInfo(fs.BasePath + "FIFASetup\\fifaconfig.exe");
-                    fi.MoveTo(fi.FullName.Replace(".exe", "_orig.exe"));
-                }
-
-                CopyFileIfRequired("thirdparty/fifaconfig.exe", fs.BasePath + "FIFASetup\\fifaconfig.exe");
-            }
-
-            // launch the game (redirecting to the modPath directory)
-            Logger.Log("Launching Game");
-
-            try
-            {
-                ExecuteProcess($"{fs.BasePath + ProfilesLibrary.ProfileName}.exe", $"-dataPath \"{modDataPath.Trim('\\')}\" {additionalArgs}");
-            }
-            catch (Exception ex)
-            {
-                App.Logger.Log("Error Launching Game: " + ex);
-            }
-
-            App.Logger.Log("Done");
-
-            GC.Collect();
-            return 0;
-        }
-
-        private List<ModInfo> GenerateModInfoList(string[] modPaths, string rootPath)
-        {
-            List<ModInfo> modInfoList = new List<ModInfo>();
-
-            foreach (string path in modPaths)
-            {
-                FileInfo fi = new FileInfo(Path.Combine(rootPath, path));
-                FrostyMod fmod = new FrostyMod(fi.FullName);
-                ModInfo modInfo;
-
-                if (fmod.NewFormat)
-                {
-                    modInfo = new ModInfo
                     {
-                        Name = fmod.ModDetails.Title,
-                        Version = fmod.ModDetails.Version,
-                        Category = fmod.ModDetails.Category,
-                        Link = fmod.ModDetails.Link,
-                        FileName = path
-                    };
+                        // copy from old data to new data
+                        CopyFileIfRequired(fs.BasePath + "Data/chunkmanifest", modDataPath + "Data/chunkmanifest");
+                        CopyFileIfRequired(fs.BasePath + "Data/initfs_Win32", modDataPath + "Data/initfs_Win32");
+                    }
+
+                    // create the frosty mod list file
+                    File.WriteAllText(Path.Combine(modDataPath, patchPath, "mods.json"), JsonConvert.SerializeObject(GenerateModInfoList(modPaths, rootPath), Formatting.Indented));
                 }
-                else
+
+                cancelToken.ThrowIfCancellationRequested();
+
+                // DAI and NFS dont require bcrypt
+                if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
                 {
-                    FrostyModCollection fcollection = new FrostyModCollection(fi.FullName);
-                    if (fcollection.IsValid)
+                    // delete old useless bcrypt
+                    if (File.Exists(fs.BasePath + "bcrypt.dll"))
+                        File.Delete(fs.BasePath + "bcrypt.dll");
+
+                    // copy over new CryptBase
+                    CopyFileIfRequired("ThirdParty/CryptBase.dll", fs.BasePath + "CryptBase.dll");
+                }
+                CopyFileIfRequired(fs.BasePath + "user.cfg", modDataPath + "user.cfg");
+
+                // FIFA games require a fifaconfig workaround
+                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa19 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa20)
+                {
+                    FileInfo fi = new FileInfo(fs.BasePath + "FIFASetup\\fifaconfig_orig.exe");
+                    if (!fi.Exists)
+                    {
+                        fi = new FileInfo(fs.BasePath + "FIFASetup\\fifaconfig.exe");
+                        fi.MoveTo(fi.FullName.Replace(".exe", "_orig.exe"));
+                    }
+
+                    CopyFileIfRequired("thirdparty/fifaconfig.exe", fs.BasePath + "FIFASetup\\fifaconfig.exe");
+                }
+
+                // launch the game (redirecting to the modPath directory)
+                Logger.Log("Launching Game");
+
+                try
+                {
+                    ExecuteProcess($"{fs.BasePath + ProfilesLibrary.ProfileName}.exe", $"-dataPath \"{modDataPath.Trim('\\')}\" {additionalArgs}");
+                }
+                catch (Exception ex)
+                {
+                    App.Logger.Log("Error Launching Game: " + ex);
+                }
+
+                App.Logger.Log("Done");
+
+                GC.Collect();
+                return 0;
+            }
+
+            private List<ModInfo> GenerateModInfoList(string[] modPaths, string rootPath)
+            {
+                List<ModInfo> modInfoList = new List<ModInfo>();
+
+                foreach (string path in modPaths)
+                {
+                    FileInfo fi = new FileInfo(Path.Combine(rootPath, path));
+                    FrostyMod fmod = new FrostyMod(fi.FullName);
+                    ModInfo modInfo;
+
+                    if (fmod.NewFormat)
                     {
                         modInfo = new ModInfo
                         {
-                            Name = fcollection.ModDetails.Title,
-                            Version = fcollection.ModDetails.Version,
-                            Category = fcollection.ModDetails.Category,
-                            Link = fcollection.ModDetails.Link,
+                            Name = fmod.ModDetails.Title,
+                            Version = fmod.ModDetails.Version,
+                            Category = fmod.ModDetails.Category,
+                            Link = fmod.ModDetails.Link,
                             FileName = path
                         };
                     }
                     else
                     {
-                        DbObject mod = null;
-                        using (DbReader reader = new DbReader(new FileStream(fi.FullName, FileMode.Open, FileAccess.Read), null))
-                            mod = reader.ReadDbObject();
-
-                        modInfo = new ModInfo
+                        FrostyModCollection fcollection = new FrostyModCollection(fi.FullName);
+                        if (fcollection.IsValid)
                         {
-                            Name = mod.GetValue<string>("title"),
-                            Version = mod.GetValue<string>("version"),
-                            Category = mod.GetValue<string>("category"),
-                            FileName = path
-                        };
-                    }
-
-                }
-                modInfoList.Add(modInfo);
-            }
-            return modInfoList;
-        }
-
-        private void WriteArchiveData(string catalog, CasDataEntry casDataEntry)
-        {
-            List<int> casEntries = new List<int>();
-            int casIndex = 1;
-            int totalSize = 0;
-
-            // find the next available cas
-            while (File.Exists(string.Format("{0}\\cas_{1}.cas", catalog, casIndex.ToString("D2"))))
-                casIndex++;
-
-            // write data to cas
-            Stream currentCasStream = null;
-            foreach (Sha1 sha1 in casDataEntry.EnumerateDataRefs())
-            {
-                ArchiveInfo info = archiveData[sha1];
-
-                int casMaxBytes = 536870912;
-                switch (Config.Get("MaxCasFileSize", "1GB"))
-                {
-                    case "1GB": casMaxBytes = 1073741824; break;
-                    case "512MB": casMaxBytes = 536870912; break;
-                    case "256MB": casMaxBytes = 268435456; break;
-                }
-
-                // if cas exceeds max size, create a new one (incrementing index)
-                if (currentCasStream == null || ((totalSize + info.Data.Length) > casMaxBytes))
-                {
-                    if (currentCasStream != null)
-                    {
-                        currentCasStream.Dispose();
-                        casIndex++;
-                    }
-
-                    FileInfo casFi = new FileInfo(string.Format("{0}\\cas_{1}.cas", catalog, casIndex.ToString("D2")));
-                    Directory.CreateDirectory(casFi.DirectoryName);
-
-                    currentCasStream = new FileStream(casFi.FullName, FileMode.Create, FileAccess.Write);
-                    totalSize = 0;
-                }
-
-                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
-                {
-                    byte[] tmpBuf = new byte[0x20];
-                    using (NativeWriter tmpWriter = new NativeWriter(new MemoryStream(tmpBuf)))
-                    {
-                        tmpWriter.Write(0xF00FCEFA);
-                        tmpWriter.Write(sha1);
-                        tmpWriter.Write((long)info.Data.Length);
-                    }
-                    currentCasStream.Write(tmpBuf, 0, 0x20);
-                    totalSize += 0x20;
-                }
-
-                foreach (CasFileEntry casEntry in casDataEntry.EnumerateFileInfos(sha1))
-                {
-                    if (casEntry.Entry != null && casEntry.Entry.RangeStart != 0 && !casEntry.FileInfo.isChunk)
-                    {
-                        casEntry.FileInfo.offset = (uint)(currentCasStream.Position + casEntry.Entry.RangeStart);
-                        casEntry.FileInfo.size = (casEntry.Entry.RangeEnd - casEntry.Entry.RangeStart);
-                    }
-                    else
-                    {
-                        casEntry.FileInfo.offset = (uint)currentCasStream.Position;
-                        casEntry.FileInfo.size = info.Data.Length;
-                    }
-                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
-                    {
-                        casEntry.FileInfo.file = new ManifestFileRef(casEntry.FileInfo.file.CatalogIndex, false, casIndex);
-                    }
-                    else
-                    {
-                        casEntry.FileInfo.file = new ManifestFileRef(casEntry.FileInfo.file.CatalogIndex, true, casIndex);
-                    }
-                }
-
-                currentCasStream.Write(info.Data, 0, info.Data.Length);
-
-                casEntries.Add(casIndex);
-                totalSize += info.Data.Length;
-            }
-            currentCasStream.Dispose();
-
-            FileInfo fi = new FileInfo(string.Format("{0}\\cas.cat", catalog));
-            List<CatResourceEntry> entries = new List<CatResourceEntry>();
-            List<CatPatchEntry> patchEntries = new List<CatPatchEntry>();
-            List<CatResourceEntry> encEntries = new List<CatResourceEntry>();
-            byte[] header = null;
-
-            // read in original cat
-            using (CatReader reader = new CatReader(new FileStream(fi.FullName, FileMode.Open, FileAccess.Read), fs.CreateDeobfuscator()))
-            {
-                for (int i = 0; i < reader.ResourceCount; i++)
-                    entries.Add(reader.ReadResourceEntry());
-
-                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.MassEffectAndromeda || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedPayback || ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden19)
-                {
-                    for (int i = 0; i < reader.EncryptedCount; i++)
-                        encEntries.Add(reader.ReadEncryptedEntry());
-                }
-
-                for (int i = 0; i < reader.PatchCount; i++)
-                    patchEntries.Add(reader.ReadPatchEntry());
-
-                reader.Position = 0;
-                header = reader.ReadBytes(0x22C);
-            }
-
-            // write out new modified cat
-            using (NativeWriter writer = new NativeWriter(new FileStream(fi.FullName, FileMode.Create)))
-            {
-                int numEntries = 0;
-                int numPatchEntries = 0;
-
-                MemoryStream ms = new MemoryStream();
-                using (NativeWriter tmpWriter = new NativeWriter(ms))
-                {
-                    // unmodified entries
-                    foreach (CatResourceEntry entry in entries)
-                    {
-                        //if (casDataEntry.Contains(entry.Sha1))
-                        //    continue;
-
-                        tmpWriter.Write(entry.Sha1);
-                        tmpWriter.Write(entry.Offset);
-                        tmpWriter.Write(entry.Size);
-                        if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
-                            tmpWriter.Write(entry.LogicalOffset);
-                        tmpWriter.Write(entry.ArchiveIndex);
-                        numEntries++;
-                    }
-
-                    int offset = 0, index = 0, currentCasIndex = casEntries.Count > 0 ? casEntries[0] : 1;
-
-                    // new entries
-                    foreach (Sha1 sha1 in casDataEntry.EnumerateDataRefs())
-                    {
-                        if (currentCasIndex != casEntries[index])
+                            modInfo = new ModInfo
+                            {
+                                Name = fcollection.ModDetails.Title,
+                                Version = fcollection.ModDetails.Version,
+                                Category = fcollection.ModDetails.Category,
+                                Link = fcollection.ModDetails.Link,
+                                FileName = path
+                            };
+                        }
+                        else
                         {
-                            offset = 0;
-                            currentCasIndex = casEntries[index];
+                            DbObject mod = null;
+                            using (DbReader reader = new DbReader(new FileStream(fi.FullName, FileMode.Open, FileAccess.Read), null))
+                                mod = reader.ReadDbObject();
+
+                            modInfo = new ModInfo
+                            {
+                                Name = mod.GetValue<string>("title"),
+                                Version = mod.GetValue<string>("version"),
+                                Category = mod.GetValue<string>("category"),
+                                FileName = path
+                            };
                         }
 
-                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
-                            offset += 0x20;
-
-                        ArchiveInfo info = archiveData[sha1];
-
-                        tmpWriter.Write(sha1);
-                        tmpWriter.Write(offset);
-                        tmpWriter.Write(info.Data.Length);
-                        if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
-                            tmpWriter.Write(0x00);
-                        tmpWriter.Write(casEntries[index++]);
-
-                        offset += info.Data.Length;
-                        numEntries++;
                     }
-
-                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.MassEffectAndromeda || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedPayback || ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden19)
-                    {
-                        // encrypted entries
-                        foreach (CatResourceEntry entry in encEntries)
-                        {
-                            tmpWriter.Write(entry.Sha1);
-                            tmpWriter.Write(entry.Offset);
-                            tmpWriter.Write(entry.EncryptedSize);
-                            tmpWriter.Write(entry.LogicalOffset);
-                            tmpWriter.Write(entry.ArchiveIndex);
-                            tmpWriter.Write(entry.Unknown);
-                            tmpWriter.WriteFixedSizedString(entry.KeyId, entry.KeyId.Length);
-                            tmpWriter.Write(entry.UnknownData);
-                        }
-                    }
-
-                    // unmodified patch entries
-                    foreach (CatPatchEntry entry in patchEntries)
-                    {
-                        //if (casDataEntry.Contains(entry.Sha1))
-                        //    continue;
-
-                        tmpWriter.Write(entry.Sha1);
-                        tmpWriter.Write(entry.BaseSha1);
-                        tmpWriter.Write(entry.DeltaSha1);
-                        numPatchEntries++;
-                    }
-
-                    // write it to file
-                    if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
-                        writer.Write(header);
-                    writer.WriteFixedSizedString("NyanNyanNyanNyan", 16);
-                    if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
-                    {
-                        writer.Write(numEntries);
-                        writer.Write(numPatchEntries);
-                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.MassEffectAndromeda || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedPayback || ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden19 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
-                        {
-                            writer.Write(encEntries.Count);
-                            writer.Write(0x00);
-                            writer.Write(-1);
-                            writer.Write(-1);
-                        }
-                    }
-                    writer.Write(ms.ToArray());
+                    modInfoList.Add(modInfo);
                 }
+                return modInfoList;
             }
-        }
 
-        private bool DeleteSelectFiles(string modPath)
-        {
-            DirectoryInfo di = new DirectoryInfo(modPath);
-            if (di.Exists)
+            private void WriteArchiveData(string catalog, CasDataEntry casDataEntry)
             {
-                RecursiveDeleteFiles(modPath);
-                foreach (string catalog in fs.Catalogs)
+                List<int> casEntries = new List<int>();
+                int casIndex = 1;
+                int totalSize = 0;
+
+                // find the next available cas
+                while (File.Exists(string.Format("{0}\\cas_{1}.cas", catalog, casIndex.ToString("D2"))))
+                    casIndex++;
+
+                // write data to cas
+                Stream currentCasStream = null;
+                foreach (Sha1 sha1 in casDataEntry.EnumerateDataRefs())
                 {
-                    string basePatchCatalog = fs.ResolvePath("native_patch/" + catalog);
-                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5) //woo patch folder
-                        basePatchCatalog = fs.ResolvePath("native_data/" + catalog);
-                    string modDataCatalog = $"{modPath}/{catalog}";
+                    ArchiveInfo info = archiveData[sha1];
 
-                    if (Directory.Exists(modDataCatalog))
+                    int casMaxBytes = 536870912;
+                    switch (Config.Get("MaxCasFileSize", "1GB"))
                     {
-                        foreach (string filename in Directory.EnumerateFiles(modDataCatalog))
-                        {
-                            FileInfo fi = new FileInfo(filename);
+                        case "1GB": casMaxBytes = 1073741824; break;
+                        case "512MB": casMaxBytes = 536870912; break;
+                        case "256MB": casMaxBytes = 268435456; break;
+                    }
 
-                            // delete if cas does not exist in base patch OR is not a symbolic link
-                            if (!File.Exists(basePatchCatalog + "/" + fi.Name) || (fi.Attributes & FileAttributes.ReparsePoint) == 0)
-                                File.Delete(fi.FullName);
+                    // if cas exceeds max size, create a new one (incrementing index)
+                    if (currentCasStream == null || ((totalSize + info.Data.Length) > casMaxBytes))
+                    {
+                        if (currentCasStream != null)
+                        {
+                            currentCasStream.Dispose();
+                            casIndex++;
+                        }
+
+                        FileInfo casFi = new FileInfo(string.Format("{0}\\cas_{1}.cas", catalog, casIndex.ToString("D2")));
+                        Directory.CreateDirectory(casFi.DirectoryName);
+
+                        currentCasStream = new FileStream(casFi.FullName, FileMode.Create, FileAccess.Write);
+                        totalSize = 0;
+                    }
+
+                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
+                    {
+                        byte[] tmpBuf = new byte[0x20];
+                        using (NativeWriter tmpWriter = new NativeWriter(new MemoryStream(tmpBuf)))
+                        {
+                            tmpWriter.Write(0xF00FCEFA);
+                            tmpWriter.Write(sha1);
+                            tmpWriter.Write((long)info.Data.Length);
+                        }
+                        currentCasStream.Write(tmpBuf, 0, 0x20);
+                        totalSize += 0x20;
+                    }
+
+                    foreach (CasFileEntry casEntry in casDataEntry.EnumerateFileInfos(sha1))
+                    {
+                        if (casEntry.Entry != null && casEntry.Entry.RangeStart != 0 && !casEntry.FileInfo.isChunk)
+                        {
+                            casEntry.FileInfo.offset = (uint)(currentCasStream.Position + casEntry.Entry.RangeStart);
+                            casEntry.FileInfo.size = (casEntry.Entry.RangeEnd - casEntry.Entry.RangeStart);
+                        }
+                        else
+                        {
+                            casEntry.FileInfo.offset = (uint)currentCasStream.Position;
+                            casEntry.FileInfo.size = info.Data.Length;
+                        }
+
+                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                        {
+                            casEntry.FileInfo.file = new ManifestFileRef(casEntry.FileInfo.file.CatalogIndex, false, casIndex);
+                        }
+                        else
+                        {
+                            casEntry.FileInfo.file = new ManifestFileRef(casEntry.FileInfo.file.CatalogIndex, true, casIndex);
+                        }
+
+                        currentCasStream.Write(info.Data, 0, info.Data.Length);
+
+                        casEntries.Add(casIndex);
+                        totalSize += info.Data.Length;
+                    }
+                    currentCasStream.Dispose();
+
+                    FileInfo fi = new FileInfo(string.Format("{0}\\cas.cat", catalog));
+                    List<CatResourceEntry> entries = new List<CatResourceEntry>();
+                    List<CatPatchEntry> patchEntries = new List<CatPatchEntry>();
+                    List<CatResourceEntry> encEntries = new List<CatResourceEntry>();
+                    byte[] header = null;
+
+                    // read in original cat
+                    using (CatReader reader = new CatReader(new FileStream(fi.FullName, FileMode.Open, FileAccess.Read), fs.CreateDeobfuscator()))
+                    {
+                        for (int i = 0; i < reader.ResourceCount; i++)
+                            entries.Add(reader.ReadResourceEntry());
+
+                        if (ProfilesLibrary.DataVersion == (int)ProfileVersion.MassEffectAndromeda || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedPayback || ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden19)
+                        {
+                            for (int i = 0; i < reader.EncryptedCount; i++)
+                                encEntries.Add(reader.ReadEncryptedEntry());
+                        }
+
+                        for (int i = 0; i < reader.PatchCount; i++)
+                            patchEntries.Add(reader.ReadPatchEntry());
+
+                        reader.Position = 0;
+                        header = reader.ReadBytes(0x22C);
+                    }
+
+                    // write out new modified cat
+                    using (NativeWriter writer = new NativeWriter(new FileStream(fi.FullName, FileMode.Create)))
+                    {
+                        int numEntries = 0;
+                        int numPatchEntries = 0;
+
+                        MemoryStream ms = new MemoryStream();
+                        using (NativeWriter tmpWriter = new NativeWriter(ms))
+                        {
+                            // unmodified entries
+                            foreach (CatResourceEntry entry in entries)
+                            {
+                                //if (casDataEntry.Contains(entry.Sha1))
+                                //    continue;
+
+                                tmpWriter.Write(entry.Sha1);
+                                tmpWriter.Write(entry.Offset);
+                                tmpWriter.Write(entry.Size);
+                                if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
+                                    tmpWriter.Write(entry.LogicalOffset);
+                                tmpWriter.Write(entry.ArchiveIndex);
+                                numEntries++;
+                            }
+
+                            int offset = 0, index = 0, currentCasIndex = casEntries.Count > 0 ? casEntries[0] : 1;
+
+                            // new entries
+                            foreach (Sha1 sha1 in casDataEntry.EnumerateDataRefs())
+                            {
+                                if (currentCasIndex != casEntries[index])
+                                {
+                                    offset = 0;
+                                    currentCasIndex = casEntries[index];
+                                }
+
+                                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.DragonAgeInquisition || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield4 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeed || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedRivals)
+                                    offset += 0x20;
+
+                                ArchiveInfo info = archiveData[sha1];
+
+                                tmpWriter.Write(sha1);
+                                tmpWriter.Write(offset);
+                                tmpWriter.Write(info.Data.Length);
+                                if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
+                                    tmpWriter.Write(0x00);
+                                tmpWriter.Write(casEntries[index++]);
+
+                                offset += info.Data.Length;
+                                numEntries++;
+                            }
+
+                            if (ProfilesLibrary.DataVersion == (int)ProfileVersion.MassEffectAndromeda || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedPayback || ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden19)
+                            {
+                                // encrypted entries
+                                foreach (CatResourceEntry entry in encEntries)
+                                {
+                                    tmpWriter.Write(entry.Sha1);
+                                    tmpWriter.Write(entry.Offset);
+                                    tmpWriter.Write(entry.EncryptedSize);
+                                    tmpWriter.Write(entry.LogicalOffset);
+                                    tmpWriter.Write(entry.ArchiveIndex);
+                                    tmpWriter.Write(entry.Unknown);
+                                    tmpWriter.WriteFixedSizedString(entry.KeyId, entry.KeyId.Length);
+                                    tmpWriter.Write(entry.UnknownData);
+                                }
+                            }
+
+                            // unmodified patch entries
+                            foreach (CatPatchEntry entry in patchEntries)
+                            {
+                                //if (casDataEntry.Contains(entry.Sha1))
+                                //    continue;
+
+                                tmpWriter.Write(entry.Sha1);
+                                tmpWriter.Write(entry.BaseSha1);
+                                tmpWriter.Write(entry.DeltaSha1);
+                                numPatchEntries++;
+                            }
+
+                            // write it to file
+                            if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
+                                writer.Write(header);
+                            writer.WriteFixedSizedString("NyanNyanNyanNyan", 16);
+                            if (ProfilesLibrary.DataVersion != (int)ProfileVersion.DragonAgeInquisition && ProfilesLibrary.DataVersion != (int)ProfileVersion.Battlefield4 && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeed && ProfilesLibrary.DataVersion != (int)ProfileVersion.NeedForSpeedRivals)
+                            {
+                                writer.Write(numEntries);
+                                writer.Write(numPatchEntries);
+                                if (ProfilesLibrary.DataVersion == (int)ProfileVersion.MassEffectAndromeda || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa17 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Fifa18 || ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.NeedForSpeedPayback || ProfilesLibrary.DataVersion == (int)ProfileVersion.Madden19 || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                                {
+                                    writer.Write(encEntries.Count);
+                                    writer.Write(0x00);
+                                    writer.Write(-1);
+                                    writer.Write(-1);
+                                }
+                            }
+                            writer.Write(ms.ToArray());
                         }
                     }
                 }
 
-                return true;
-            }
-            return false;
-        }
-
-        private bool IsSamePatch(string modPath)
-        {
-            string baseLayoutPath = fs.ResolvePath("native_patch/layout.toc");
-            if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
-                baseLayoutPath = fs.ResolvePath("native_data/layout.toc");
-
-            string modLayoutPath = modPath + "/layout.toc";
-            if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
-                modLayoutPath = Directory.GetParent(modPath).FullName + "/Data/layout.toc";
-            //modLayoutPath = modPath + "../Data/layout.toc";
-
-            if (!File.Exists(baseLayoutPath))
-                return false;
-            if (!File.Exists(modLayoutPath))
-                return false;
-
-            DbObject patchLayout = null;
-            using (DbReader reader = new DbReader(new FileStream(baseLayoutPath, FileMode.Open, FileAccess.Read), fs.CreateDeobfuscator()))
-                patchLayout = reader.ReadDbObject();
-
-            DbObject modLayout = null;
-            using (DbReader reader = new DbReader(new FileStream(modLayoutPath, FileMode.Open, FileAccess.Read), fs.CreateDeobfuscator()))
-                modLayout = reader.ReadDbObject();
-
-            int patchHead = patchLayout.GetValue<int>("head");
-            int modHead = modLayout.GetValue<int>("head");
-
-            if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII)
-            {
-                if (patchHead == 0xBDFB3 && modHead != patchHead)
+                private bool DeleteSelectFiles(string modPath)
                 {
-                    // SWBF2 new layout requires completely rebuilding ModData from scratch
-                    Directory.Delete(modPath + "../", true);
+                    DirectoryInfo di = new DirectoryInfo(modPath);
+                    if (di.Exists)
+                    {
+                        RecursiveDeleteFiles(modPath);
+                        foreach (string catalog in fs.Catalogs)
+                        {
+                            string basePatchCatalog = fs.ResolvePath("native_patch/" + catalog);
+                            if (ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5) //woo patch folder
+                                basePatchCatalog = fs.ResolvePath("native_data/" + catalog);
+                            string modDataCatalog = $"{modPath}/{catalog}";
+
+                            if (Directory.Exists(modDataCatalog))
+                            {
+                                foreach (string filename in Directory.EnumerateFiles(modDataCatalog))
+                                {
+                                    FileInfo fi = new FileInfo(filename);
+
+                                    // delete if cas does not exist in base patch OR is not a symbolic link
+                                    if (!File.Exists(basePatchCatalog + "/" + fi.Name) || (fi.Attributes & FileAttributes.ReparsePoint) == 0)
+                                        File.Delete(fi.FullName);
+                                }
+                            }
+                        }
+
+                        return true;
+                    }
                     return false;
                 }
-            }
 
-            if (modHead != patchHead)
-            {
-                Directory.Delete(modPath + "../", true);
-                return false;
-            }
-
-            return true;
-        }
-
-        private void RecursiveDeleteFiles(string path)
-        {
-            DirectoryInfo di = new DirectoryInfo(path);
-
-            DirectoryInfo[] paths = di.GetDirectories();
-            FileInfo[] files = di.GetFiles();
-            foreach (FileInfo fi in files)
-            {
-                // delete all cat/toc/sb files and the initfs_win32 and mods file
-                if (fi.Extension == ".cat" || fi.Extension == ".toc" || fi.Extension == ".sb" || fi.Name.ToLower() == "mods.txt" || fi.Name.ToLower() == "mods.json")
+                private bool IsSamePatch(string modPath)
                 {
-                    // dont delete layout.toc
-                    if (fi.Name.ToLower() == "layout.toc")
-                        continue;
+                    string baseLayoutPath = fs.ResolvePath("native_patch/layout.toc");
+                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                        baseLayoutPath = fs.ResolvePath("native_data/layout.toc");
 
-                    fi.Delete();
-                }
-            }
+                    string modLayoutPath = modPath + "/layout.toc";
+                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
+                        modLayoutPath = Directory.GetParent(modPath).FullName + "/Data/layout.toc";
+                    //modLayoutPath = modPath + "../Data/layout.toc";
 
-            foreach (DirectoryInfo subDi in paths)
-            {
-                string tempPath = Path.Combine(path, subDi.Name);
-                RecursiveDeleteFiles(tempPath);
-            }
-        }
+                    if (!File.Exists(baseLayoutPath))
+                        return false;
+                    if (!File.Exists(modLayoutPath))
+                        return false;
 
-        private bool RunSymbolicLinkProcess(List<SymLinkStruct> cmdArgs)
-        {
-            using (TextWriter writer = new StreamWriter(new FileStream(AppDomain.CurrentDomain.BaseDirectory + "\\run.bat", FileMode.Create)))
-            {
-                foreach (SymLinkStruct arg in cmdArgs)
-                    writer.WriteLine("mklink" + ((arg.isFolder) ? "/D " : " ") + "\"" + arg.dest + "\" \"" + arg.src + "\"");
-            }
+                    DbObject patchLayout = null;
+                    using (DbReader reader = new DbReader(new FileStream(baseLayoutPath, FileMode.Open, FileAccess.Read), fs.CreateDeobfuscator()))
+                        patchLayout = reader.ReadDbObject();
 
-            // create data and update symbolic links
-            ExecuteProcess("cmd.exe", "/C \"" + AppDomain.CurrentDomain.BaseDirectory + "\\run.bat\"", true, true);
+                    DbObject modLayout = null;
+                    using (DbReader reader = new DbReader(new FileStream(modLayoutPath, FileMode.Open, FileAccess.Read), fs.CreateDeobfuscator()))
+                        modLayout = reader.ReadDbObject();
 
-            // delete batch
-            File.Delete("run.bat");
+                    int patchHead = patchLayout.GetValue<int>("head");
+                    int modHead = modLayout.GetValue<int>("head");
 
-            // validate
-            foreach (SymLinkStruct arg in cmdArgs)
-            {
-                if ((arg.isFolder && !Directory.Exists(arg.dest)) || (!arg.isFolder && !File.Exists(arg.dest)))
-                    return false;
-            }
-
-            return true;
-        }
-
-        public static void ExecuteProcess(string processName, string args, bool waitForExit = false, bool asAdmin = false, Dictionary<string, string> env = null)
-        {
-            using (Process process = new Process())
-            {
-                FileInfo fi = new FileInfo(processName);
-
-                process.StartInfo.FileName = processName;
-                process.StartInfo.WorkingDirectory = fi.DirectoryName;
-                process.StartInfo.Arguments = args;
-                process.StartInfo.UseShellExecute = false;
-
-                if (env != null)
-                {
-                    foreach (string key in env.Keys)
+                    if (ProfilesLibrary.DataVersion == (int)ProfileVersion.StarWarsBattlefrontII || ProfilesLibrary.DataVersion == (int)ProfileVersion.Battlefield5)
                     {
-                        process.StartInfo.EnvironmentVariables[key] = env[key];
+                        if (patchHead == 0xBDFB3 && modHead != patchHead)
+                        {
+                            // SWBF2 new layout requires completely rebuilding ModData from scratch
+                            Directory.Delete(modPath + "../", true);
+                            return false;
+                        }
+                    }
+
+                    if (modHead != patchHead)
+                    {
+                        Directory.Delete(modPath + "../", true);
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                private void RecursiveDeleteFiles(string path)
+                {
+                    DirectoryInfo di = new DirectoryInfo(path);
+
+                    DirectoryInfo[] paths = di.GetDirectories();
+                    FileInfo[] files = di.GetFiles();
+                    foreach (FileInfo fi in files)
+                    {
+                        // delete all cat/toc/sb files and the initfs_win32 and mods file
+                        if (fi.Extension == ".cat" || fi.Extension == ".toc" || fi.Extension == ".sb" || fi.Name.ToLower() == "mods.txt" || fi.Name.ToLower() == "mods.json")
+                        {
+                            // dont delete layout.toc
+                            if (fi.Name.ToLower() == "layout.toc")
+                                continue;
+
+                            fi.Delete();
+                        }
+                    }
+
+                    foreach (DirectoryInfo subDi in paths)
+                    {
+                        string tempPath = Path.Combine(path, subDi.Name);
+                        RecursiveDeleteFiles(tempPath);
                     }
                 }
 
-                if (asAdmin)
+                private bool RunSymbolicLinkProcess(List<SymLinkStruct> cmdArgs)
                 {
-                    process.StartInfo.UseShellExecute = true;
-                    process.StartInfo.Verb = "runas";
+                    using (TextWriter writer = new StreamWriter(new FileStream(AppDomain.CurrentDomain.BaseDirectory + "\\run.bat", FileMode.Create)))
+                    {
+                        foreach (SymLinkStruct arg in cmdArgs)
+                            writer.WriteLine("mklink" + ((arg.isFolder) ? "/D " : " ") + "\"" + arg.dest + "\" \"" + arg.src + "\"");
+                    }
+
+                    // create data and update symbolic links
+                    ExecuteProcess("cmd.exe", "/C \"" + AppDomain.CurrentDomain.BaseDirectory + "\\run.bat\"", true, true);
+
+                    // delete batch
+                    if (File.Exists("run.bat"))
+                    {
+                        File.Delete("run.bat");
+                    }
+
+                    // validate
+                    foreach (SymLinkStruct arg in cmdArgs)
+                    {
+                        if ((arg.isFolder && !Directory.Exists(arg.dest)) || (!arg.isFolder && !File.Exists(arg.dest)))
+                            return false;
+                    }
+
+                    return true;
                 }
 
-                process.Start();
+                public static void ExecuteProcess(string processName, string args, bool waitForExit = false, bool asAdmin = false, Dictionary<string, string> env = null)
+                {
+                    using (Process process = new Process())
+                    {
+                        FileInfo fi = new FileInfo(processName);
 
-                if (waitForExit)
-                    process.WaitForExit();
-            }
-        }
+                        process.StartInfo.FileName = processName;
+                        process.StartInfo.WorkingDirectory = fi.DirectoryName;
+                        process.StartInfo.Arguments = args;
+                        process.StartInfo.UseShellExecute = false;
 
-        private byte[] GetResourceData(string modFilename, int archiveIndex, long offset, int size)
-        {
-            string archiveFilename = modFilename.Replace(".fbmod", "_" + archiveIndex.ToString("D2") + ".archive");
-            if (!File.Exists(archiveFilename))
-                return null;
+                        if (env != null)
+                        {
+                            foreach (string key in env.Keys)
+                            {
+                                process.StartInfo.EnvironmentVariables[key] = env[key];
+                            }
+                        }
 
-            using (NativeReader reader = new NativeReader(new FileStream(archiveFilename, FileMode.Open, FileAccess.Read)))
-            {
-                reader.Position = offset;
-                return reader.ReadBytes(size);
-            }
-        }
+                        if (asAdmin)
+                        {
+                            process.StartInfo.UseShellExecute = true;
+                            process.StartInfo.Verb = "runas";
+                        }
 
-        private void CopyFileIfRequired(string source, string dest)
-        {
-            FileInfo baseFi = new FileInfo(source);
-            FileInfo modFi = new FileInfo(dest);
-            if (baseFi.Exists)
-            {
-                // copy file if it doesn't exist, or recently modified
-                if (!modFi.Exists || (modFi.Exists && baseFi.LastWriteTimeUtc > modFi.LastWriteTimeUtc || baseFi.Length != modFi.Length))
-                    File.Copy(baseFi.FullName, modFi.FullName, true);
+                        try
+                        {
+                            process.Start();
+
+                            if (waitForExit)
+                                process.WaitForExit();
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+
+                private byte[] GetResourceData(string modFilename, int archiveIndex, long offset, int size)
+                {
+                    string archiveFilename = modFilename.Replace(".fbmod", "_" + archiveIndex.ToString("D2") + ".archive");
+                    if (!File.Exists(archiveFilename))
+                        return null;
+
+                    using (NativeReader reader = new NativeReader(new FileStream(archiveFilename, FileMode.Open, FileAccess.Read)))
+                    {
+                        reader.Position = offset;
+                        return reader.ReadBytes(size);
+                    }
+                }
+
+                private void CopyFileIfRequired(string source, string dest)
+                {
+                    FileInfo baseFi = new FileInfo(source);
+                    FileInfo modFi = new FileInfo(dest);
+                    if (baseFi.Exists)
+                    {
+                        // copy file if it doesn't exist, or recently modified
+                        if (!modFi.Exists || (modFi.Exists && baseFi.LastWriteTimeUtc > modFi.LastWriteTimeUtc || baseFi.Length != modFi.Length))
+                            File.Copy(baseFi.FullName, modFi.FullName, true);
+                    }
+                }
             }
         }
     }
-}
