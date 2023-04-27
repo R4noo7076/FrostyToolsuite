@@ -24,7 +24,7 @@ namespace FrostySdk
         StarWarsBattlefrontII = 20171117,
         Madden19 = 20180807,
         Fifa19 = 20180914,
-        Battlefield5 = 20180628,
+        Battlefield5 = 20181119,
         NeedForSpeedEdge = 20171210,
         Anthem = 20181207,
         Madden20 = 20190729,
