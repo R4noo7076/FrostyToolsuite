@@ -1,0 +1,161 @@
+<shader profile="bfv">
+	<permutations>
+		<permutation name="TWO_TEXCOORDS_NO_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+		<permutation name="THREE_TEXCOORDS_NO_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+					<layoutelement usage="TexCoord2" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+		<permutation name="FOUR_TEXCOORDS_NO_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+					<layoutelement usage="TexCoord2" format="Half2" />
+					<layoutelement usage="TexCoord3" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+		<permutation name="TWO_TEXCOORDS_ONE_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Color0" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+		<permutation name="THREE_TEXCOORDS_ONE_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Color0" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+					<layoutelement usage="TexCoord2" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+		<permutation name="FOUR_TEXCOORDS_ONE_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Color0" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+					<layoutelement usage="TexCoord2" format="Half2" />
+					<layoutelement usage="TexCoord3" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+		<permutation name="TWO_TEXCOORDS_TWO_COLOR" skinned="true" bonesPerVertex="4">
+			<vertexshader>
+				<vertexlayout>
+					<layoutelement usage="Pos" format="Half3" />
+					<layoutelement usage="BinormalSign" format="Half" />
+					<layoutelement usage="BoneIndices" format="UShort4" />
+					<layoutelement usage="BoneWeights" format="UByte4N" />
+					<layoutelement usage="Color0" format="UByte4N" />
+					<layoutelement usage="Color1" format="UByte4N" />
+					<layoutelement usage="Normal" format="Half4" />
+					<layoutelement usage="Tangent" format="Half4" />
+					<layoutelement usage="TexCoord0" format="Half2" />
+					<layoutelement usage="TexCoord1" format="Half2" />
+				</vertexlayout>
+			</vertexshader>
+		</permutation>
+	</permutations>
+	<pixelshader>
+		<parameters>
+			<parameter name="TextureRatio" type="Float4" defaultValue="1,1,0,0"/>
+			<parameter name="BloodParam" type="Float4"/>
+			<parameter name="CamoColor3" type="Float4" defaultValue="0.198,0.197,0.121,0"/>
+			<parameter name="CamoColor2" type="Float4" defaultValue="0.04699999,0.06999999,0.028,0"/>
+			<parameter name="CamoColor1" type="Float4" defaultValue="0.06299999,0.043,0.034,0"/>
+			<parameter name="CamoStrength" type="Float4"/>
+			<parameter name="CamoColor0" type="Float4" defaultValue="0.03199999,0.031,0.029,0"/>
+			<parameter name="CamouflaugeMetalness" type="Float4"/>
+			<parameter name="CamoPatternTiling" type="Float4" defaultValue="2,2,0,0"/>
+			<parameter name="CamoSmoothness" type="Float4" defaultValue="0.75,0,0,0"/>
+			<parameter name="CamoOnMetalAndWood" type="Float4" defaultValue="1,1,0,0"/>
+			<parameter name="CamoOnMetalColor1and2" type="Float4" defaultValue="1,1,0,0"/>
+			<parameter name="CamoWearEdgeFill" type="Float4"/>
+			<parameter name="WSShaderParam" type="Float4"/>
+			<parameter name="WeatheringParams" type="Float4"/>
+			<parameter name="WSWeatherType" type="Float4"/>
+			<parameter name="WoodColor_03_Lowlight" type="Float4" defaultValue="0.1946178,0.07398047,0.03886928,0"/>
+			<parameter name="WoodColor_01_Highlight" type="Float4" defaultValue="0.3371637,0.149127,0.0637589,0"/>
+			<parameter name="WoodSmoothness" type="Float4" defaultValue="0.6,0,0,0"/>
+			<parameter name="Wood_Macro_Tiling" type="Float4" defaultValue="1,1,0,0"/>
+			<parameter name="WoodDetailNormalIntensity" type="Float4" defaultValue="1,0,0,0"/>
+			<parameter name="MetalColor1" type="Float4" defaultValue="0.132868335,0.132868335,0.132868335,0"/>
+			<parameter name="MetalColor2" type="Float4" defaultValue="0.132868335,0.132868335,0.132868335,0"/>
+			<parameter name="MetalMetalness" type="Float4" defaultValue="0.7,0,0,0"/>
+			<parameter name="MetalColor1Smoothness" type="Float4" defaultValue="0.4,0,0,0"/>
+			<parameter name="MetalColor2Smoothness" type="Float4" defaultValue="0.4,0,0,0"/>
+			<parameter name="MetalMetalness2" type="Float4" defaultValue="0.7,0,0,0"/>
+			<parameter name="ScopeCrosshairOffset" type="Float4"/>
+			<parameter name="ADS_glowing_Intensity" type="Float4"/>
+			<parameter name="OverHeatParam" type="Float4"/>
+			<parameter name="OverHeat" type="Float4"/>
+		</parameters>
+		<textures>
+			<texture name="Unique_NSC" type="2d" defaultValue="Gameplay/Weapons/TexturesGeneric/Debug/T_Whitebox_NSC"/>
+			<texture name="Camo" type="2d" defaultValue="Shaders/Systems/Common_White"/>
+			<texture name="Texture3" type="2d" defaultValue="Gameplay/Weapons/TexturesGeneric/Weathering/T_WeaponMud"/>
+			<texture name="Wood_Macro" type="2d" defaultValue="Gameplay/Weapons/TexturesGeneric/Wood/T_Wood_01_NSC"/>
+			<texture name="Wood_Micro" type="2d" defaultValue="Gameplay/Weapons/TexturesGeneric/Wood/T_Wood_Detail_01"/>
+			<texture name="MetalTiling" type="2d" defaultValue="Gameplay/Weapons/TexturesGeneric/Metal/T_WeaponsDetail_02_NSM"/>
+		</textures>
+		<samplers>
+			<sampler filter="Anisotropic" maxAniso="1" maxLod="16"/>
+			<sampler filter="Anisotropic" maxAniso="0" maxLod="16"/>
+			<sampler filter="Anisotropic" maxAniso="2" maxLod="16"/>
+		</samplers>
+	</pixelshader>
+</shader>
